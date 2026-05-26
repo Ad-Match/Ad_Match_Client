@@ -1,0 +1,330 @@
+{
+  "capturedAt": "2026-05-19T10:51:36.354Z",
+  "base": "https://plfil.com",
+  "pages": [
+    {
+      "slug": "home-mobile",
+      "url": "https://plfil.com/",
+      "files": [
+        "home-mobile-full.png",
+        "home-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "home-desktop",
+      "url": "https://plfil.com/",
+      "files": [
+        "home-desktop-full.png",
+        "home-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "casting-mobile",
+      "url": "https://plfil.com/casting",
+      "files": [
+        "casting-mobile-full.png",
+        "casting-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "casting-desktop",
+      "url": "https://plfil.com/casting",
+      "files": [
+        "casting-desktop-full.png",
+        "casting-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "actor-db-mobile",
+      "url": "https://plfil.com/actor",
+      "files": [
+        "actor-db-mobile-full.png",
+        "actor-db-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "actor-db-desktop",
+      "url": "https://plfil.com/actor",
+      "files": [
+        "actor-db-desktop-full.png",
+        "actor-db-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "actor-search-mobile",
+      "url": "https://plfil.com/actor/search",
+      "files": [
+        "actor-search-mobile-full.png",
+        "actor-search-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "actor-search-desktop",
+      "url": "https://plfil.com/actor/search",
+      "files": [
+        "actor-search-desktop-full.png",
+        "actor-search-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "tour-mobile",
+      "url": "https://plfil.com/tour",
+      "files": [
+        "tour-mobile-full.png",
+        "tour-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "tour-desktop",
+      "url": "https://plfil.com/tour",
+      "files": [
+        "tour-desktop-full.png",
+        "tour-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "plfilplus-mobile",
+      "url": "https://plfil.com/plfilplus",
+      "files": [
+        "plfilplus-mobile-full.png",
+        "plfilplus-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "plfilplus-desktop",
+      "url": "https://plfil.com/plfilplus",
+      "files": [
+        "plfilplus-desktop-full.png",
+        "plfilplus-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "membership-mobile",
+      "url": "https://plfil.com/membership",
+      "files": [
+        "membership-mobile-full.png",
+        "membership-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "membership-desktop",
+      "url": "https://plfil.com/membership",
+      "files": [
+        "membership-desktop-full.png",
+        "membership-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "login-mobile",
+      "url": "https://plfil.com/login",
+      "files": [
+        "login-mobile-full.png",
+        "login-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "login-desktop",
+      "url": "https://plfil.com/login",
+      "files": [
+        "login-desktop-full.png",
+        "login-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "notice-mobile",
+      "url": "https://plfil.com/notice",
+      "files": [
+        "notice-mobile-full.png",
+        "notice-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "notice-desktop",
+      "url": "https://plfil.com/notice",
+      "files": [
+        "notice-desktop-full.png",
+        "notice-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "-sign-in--mobile",
+      "url": "https://plfil.com/account/login",
+      "files": [
+        "-sign-in-mobile-full.png",
+        "-sign-in-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "-sign-in--desktop",
+      "url": "https://plfil.com/account/login",
+      "files": [
+        "-sign-in-desktop-full.png",
+        "-sign-in-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "-51-75-163cm-56kg-mobile",
+      "url": "https://plfil.com/actors/46047",
+      "files": [
+        "-51-75-163cm-56kg-mobile-full.png",
+        "-51-75-163cm-56kg-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "-51-75-163cm-56kg-desktop",
+      "url": "https://plfil.com/actors/46047",
+      "files": [
+        "-51-75-163cm-56kg-desktop-full.png",
+        "-51-75-163cm-56kg-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "-35-90-176cm-71kg-mobile",
+      "url": "https://plfil.com/actors/34255",
+      "files": [
+        "-35-90-176cm-71kg-mobile-full.png",
+        "-35-90-176cm-71kg-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "-35-90-176cm-71kg-desktop",
+      "url": "https://plfil.com/actors/34255",
+      "files": [
+        "-35-90-176cm-71kg-desktop-full.png",
+        "-35-90-176cm-71kg-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "-29-97-175cm-65kg-mobile",
+      "url": "https://plfil.com/actors/19127",
+      "files": [
+        "-29-97-175cm-65kg-mobile-full.png",
+        "-29-97-175cm-65kg-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "-29-97-175cm-65kg-desktop",
+      "url": "https://plfil.com/actors/19127",
+      "files": [
+        "-29-97-175cm-65kg-desktop-full.png",
+        "-29-97-175cm-65kg-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "-24-01-185cm-71kg-mobile",
+      "url": "https://plfil.com/actors/38121",
+      "files": [
+        "-24-01-185cm-71kg-mobile-full.png",
+        "-24-01-185cm-71kg-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "-24-01-185cm-71kg-desktop",
+      "url": "https://plfil.com/actors/38121",
+      "files": [
+        "-24-01-185cm-71kg-desktop-full.png",
+        "-24-01-185cm-71kg-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "-27-99-162cm-60kg-mobile",
+      "url": "https://plfil.com/actors/47380",
+      "files": [
+        "-27-99-162cm-60kg-mobile-full.png",
+        "-27-99-162cm-60kg-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "-27-99-162cm-60kg-desktop",
+      "url": "https://plfil.com/actors/47380",
+      "files": [
+        "-27-99-162cm-60kg-desktop-full.png",
+        "-27-99-162cm-60kg-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "-25-01-174cm-63kg-mobile",
+      "url": "https://plfil.com/actors/36329",
+      "files": [
+        "-25-01-174cm-63kg-mobile-full.png",
+        "-25-01-174cm-63kg-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "-25-01-174cm-63kg-desktop",
+      "url": "https://plfil.com/actors/36329",
+      "files": [
+        "-25-01-174cm-63kg-desktop-full.png",
+        "-25-01-174cm-63kg-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "--mobile",
+      "url": "https://plfil.com/about",
+      "files": [
+        "-mobile-full.png",
+        "-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "--desktop",
+      "url": "https://plfil.com/about",
+      "files": [
+        "-desktop-full.png",
+        "-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    },
+    {
+      "slug": "--mobile",
+      "url": "https://plfil.com/policy?policy=privacy",
+      "files": [
+        "-mobile-full.png",
+        "-mobile-viewport.png"
+      ],
+      "viewport": "mobile"
+    },
+    {
+      "slug": "--desktop",
+      "url": "https://plfil.com/policy?policy=privacy",
+      "files": [
+        "-desktop-full.png",
+        "-desktop-viewport.png"
+      ],
+      "viewport": "desktop"
+    }
+  ]
+}

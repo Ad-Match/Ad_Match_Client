@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search,
   MessageCircle,
@@ -25,6 +25,7 @@ import {
   Settings,
   LogOut,
   Camera,
+  Bell,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -36,26 +37,60 @@ import {
   ChatMessage,
   UserType,
 } from '@/types';
+import { MOCK_MODELS } from '@/mockData';
 import {
-  MOCK_USER_ADVERTISER,
-  MOCK_MODELS,
-  MOCK_CAMPAIGNS,
-  MOCK_OFFERS,
-  MOCK_CHATS,
-  MOCK_MESSAGES,
-} from '@/mockData';
+  AUTH_TOKEN_KEY,
+  type SessionUser,
+  type ApiNotification,
+  authLogin,
+  authMe,
+  authRegister,
+  campaignsCreate,
+  campaignsList,
+  campaignsMine,
+  chatsCreateOrGetRoom,
+  chatsListRooms,
+  chatsMarkRead,
+  chatsMessages,
+  chatsSend,
+  modelsList,
+  notificationMarkRead,
+  notificationsList,
+  notificationsUnreadCount,
+  offersCreate,
+  offersMine,
+  offersUpdateStatus,
+  profileMe,
+  profileUpdate,
+  reviewsCreate,
+  reviewsMine,
+} from '@/lib/api';
 
 // --- Utility ---
 const cn = (...classes: string[]) => classes.filter(Boolean).join(' ');
+
+function mapSessionUser(s: SessionUser): User {
+  const seed = encodeURIComponent(s.username);
+  return {
+    id: s.id,
+    email: `${s.username}@local`,
+    type: s.role,
+    name: s.username,
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`,
+    companyName: s.role === 'ADVERTISER' ? `${s.username} (브랜드)` : undefined,
+  };
+}
 
 // --- Components ---
 
 const BottomNav = ({
   activeTab,
   setActiveTab,
+  chatUnreadTotal,
 }: {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  chatUnreadTotal: number;
 }) => (
   <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-zinc-100 px-6 py-3 flex justify-between items-center z-50 md:top-0 md:bottom-auto md:left-0 md:w-20 md:h-screen md:flex-col md:border-t-0 md:border-r md:py-12">
     <div className="hidden md:block mb-12">
@@ -90,9 +125,11 @@ const BottomNav = ({
     >
       <div className="relative">
         <MessageCircle size={24} />
-        <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-white">
-          2
-        </span>
+        {chatUnreadTotal > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-4 h-4 px-0.5 bg-orange-500 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-white">
+            {chatUnreadTotal > 99 ? '99+' : chatUnreadTotal}
+          </span>
+        )}
       </div>
       <span className="text-[10px] font-bold md:hidden">채팅</span>
     </button>
@@ -203,32 +240,79 @@ const MatchHistoryView = ({
 const ChatRoomView = ({
   room,
   currentUser,
+  token,
+  models,
   onBack,
+  onRoomsRefresh,
 }: {
   room: ChatRoom;
   currentUser: User;
+  token: string;
+  models: ModelProfile[];
   onBack: () => void;
+  onRoomsRefresh: () => void;
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>(
-    MOCK_MESSAGES.filter((m) => m.roomId === room.id),
-  );
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const otherParticipantId = room.participants.find((id) => id !== currentUser.id);
   const otherUser =
-    MOCK_MODELS.find((m) => m.id === otherParticipantId) || MOCK_USER_ADVERTISER;
-
-  const handleSend = () => {
-    if (!inputText.trim()) return;
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      roomId: room.id,
-      senderId: currentUser.id,
-      text: inputText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    models.find((m) => m.id === otherParticipantId) ?? {
+      id: otherParticipantId ?? '',
+      email: '',
+      type: 'ADVERTISER' as const,
+      name: `사용자 ${otherParticipantId ?? ''}`,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${otherParticipantId}`,
     };
-    setMessages([...messages, newMessage]);
-    setInputText('');
+
+  const loadMessages = useCallback(async () => {
+    try {
+      const list = await chatsMessages(token, room.id);
+      setMessages(
+        list.map((m) => ({
+          id: m.id,
+          roomId: m.roomId,
+          senderId: m.senderId,
+          text: m.text,
+          timestamp: m.timestamp,
+        })),
+      );
+      setLoadErr(null);
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : '메시지를 불러오지 못했습니다.');
+    }
+  }, [token, room.id]);
+
+  useEffect(() => {
+    void chatsMarkRead(token, room.id).catch(() => {});
+    void loadMessages();
+  }, [token, room.id, loadMessages]);
+
+  useEffect(() => {
+    const id = setInterval(() => void loadMessages(), 3000);
+    return () => clearInterval(id);
+  }, [loadMessages]);
+
+  const handleSend = async () => {
+    if (!inputText.trim()) return;
+    try {
+      const m = await chatsSend(token, room.id, inputText);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: m.id,
+          roomId: m.roomId,
+          senderId: m.senderId,
+          text: m.text,
+          timestamp: m.timestamp,
+        },
+      ]);
+      setInputText('');
+      onRoomsRefresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '전송에 실패했습니다.');
+    }
   };
 
   return (
@@ -254,12 +338,25 @@ const ChatRoomView = ({
             <p className="text-[10px] text-green-500 font-medium">온라인</p>
           </div>
         </div>
-        <button>
-          <MoreVertical size={20} className="text-zinc-400" />
-        </button>
+        <div className="flex items-center gap-2">
+          {currentUser.type === 'ADVERTISER' && (
+            <button
+              onClick={() => { window.location.href = '/pay'; }}
+              className="px-3 py-1.5 bg-black text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
+            >
+              제안 및 결제
+            </button>
+          )}
+          <button>
+            <MoreVertical size={20} className="text-zinc-400" />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-50 md:max-w-2xl md:mx-auto md:w-full">
+        {loadErr && (
+          <p className="text-center text-xs text-red-500 bg-red-50 rounded-xl py-2 px-3">{loadErr}</p>
+        )}
         {messages.map((msg) => (
           <div
             key={msg.id}
@@ -297,10 +394,11 @@ const ChatRoomView = ({
           className="flex-1 bg-zinc-100 border-none rounded-xl py-3 px-4 text-sm focus:ring-1 focus:ring-black"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          onKeyDown={(e) => e.key === 'Enter' && void handleSend()}
         />
         <button
-          onClick={handleSend}
+          type="button"
+          onClick={() => void handleSend()}
           className="w-10 h-10 bg-black text-white rounded-xl flex items-center justify-center disabled:opacity-50"
           disabled={!inputText.trim()}
         >
@@ -691,38 +789,140 @@ const FilterOverlay = ({
   );
 };
 
-const LoginView = ({ onLogin }: { onLogin: (type: UserType) => void }) => (
-  <div className="min-h-screen bg-white p-8 flex flex-col justify-center md:max-w-md md:mx-auto">
-    <div className="mb-12">
-      <h1 className="text-5xl font-bold tracking-tighter font-display">AdMatch</h1>
-      <p className="text-zinc-400 mt-2 font-medium">브랜드에 완벽한 얼굴을 찾아보세요.</p>
-    </div>
+const LoginView = ({
+  onAuthed,
+}: {
+  onAuthed: (accessToken: string, user: SessionUser) => void;
+}) => {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<UserType>('ADVERTISER');
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-    <div className="space-y-4">
+  const submit = async () => {
+    setErr(null);
+    setLoading(true);
+    try {
+      if (mode === 'login') {
+        const r = await authLogin(username.trim(), password);
+        onAuthed(r.access_token, r.user);
+      } else {
+        const r = await authRegister({
+          username: username.trim(),
+          password,
+          role,
+        });
+        onAuthed(r.access_token, r.user);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '요청에 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-white p-8 flex flex-col justify-center md:max-w-md md:mx-auto">
+      <div className="mb-8">
+        <h1 className="text-5xl font-bold tracking-tighter font-display">AdMatch</h1>
+        <p className="text-zinc-400 mt-2 font-medium">브랜드에 완벽한 얼굴을 찾아보세요.</p>
+      </div>
+
+      <div className="flex rounded-2xl bg-zinc-100 p-1 mb-6">
+        <button
+          type="button"
+          onClick={() => setMode('login')}
+          className={cn(
+            'flex-1 py-3 text-sm font-bold rounded-xl transition-colors',
+            mode === 'login' ? 'bg-white shadow-sm text-black' : 'text-zinc-500',
+          )}
+        >
+          로그인
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('register')}
+          className={cn(
+            'flex-1 py-3 text-sm font-bold rounded-xl transition-colors',
+            mode === 'register' ? 'bg-white shadow-sm text-black' : 'text-zinc-500',
+          )}
+        >
+          회원가입
+        </button>
+      </div>
+
+      {mode === 'register' && (
+        <div className="flex gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setRole('ADVERTISER')}
+            className={cn(
+              'flex-1 py-3 rounded-2xl text-sm font-bold border-2 flex items-center justify-center gap-2 transition-colors',
+              role === 'ADVERTISER' ? 'border-black bg-black text-white' : 'border-zinc-200 text-zinc-600',
+            )}
+          >
+            <Briefcase size={18} />
+            광고주
+          </button>
+          <button
+            type="button"
+            onClick={() => setRole('MODEL')}
+            className={cn(
+              'flex-1 py-3 rounded-2xl text-sm font-bold border-2 flex items-center justify-center gap-2 transition-colors',
+              role === 'MODEL' ? 'border-black bg-black text-white' : 'border-zinc-200 text-zinc-600',
+            )}
+          >
+            <Camera size={18} />
+            모델
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <label className="block">
+          <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">아이디</span>
+          <input
+            type="text"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="mt-1 w-full bg-zinc-50 border border-zinc-200 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-black outline-none"
+            placeholder="아이디"
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">비밀번호</span>
+          <input
+            type="password"
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 w-full bg-zinc-50 border border-zinc-200 rounded-2xl py-4 px-4 text-sm focus:ring-2 focus:ring-black outline-none"
+            placeholder="비밀번호"
+          />
+        </label>
+      </div>
+
+      {err && <p className="mt-4 text-sm text-red-500 text-center">{err}</p>}
+
       <button
         type="button"
-        onClick={() => onLogin('ADVERTISER')}
-        className="w-full bg-black text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-black/10 active:scale-95 transition-transform"
+        disabled={loading || !username.trim() || !password}
+        onClick={() => void submit()}
+        className="w-full mt-6 bg-black text-white font-bold py-4 rounded-2xl shadow-xl shadow-black/10 disabled:opacity-40 active:scale-[0.99] transition-transform"
       >
-        <Briefcase size={20} />
-        광고주로 시작하기
+        {loading ? '처리 중…' : mode === 'login' ? '로그인' : '가입하기'}
       </button>
-      <button
-        type="button"
-        onClick={() => onLogin('MODEL')}
-        className="w-full bg-white text-black border-2 border-black font-bold py-5 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-transform"
-      >
-        <Camera size={20} />
-        모델로 시작하기
-      </button>
-    </div>
 
-    <p className="text-center text-xs text-zinc-400 mt-12">
-      계속 진행함으로써 <span className="underline cursor-pointer">이용약관</span> 및{' '}
-      <span className="underline cursor-pointer">개인정보 처리방침</span>에 동의하게 됩니다.
-    </p>
-  </div>
-);
+      <p className="text-center text-xs text-zinc-400 mt-10">
+        계속 진행함으로써 <span className="underline cursor-pointer">이용약관</span> 및{' '}
+        <span className="underline cursor-pointer">개인정보 처리방침</span>에 동의하게 됩니다.
+      </p>
+    </div>
+  );
+};
 
 const PortfolioEditView = ({
   profile,
@@ -852,9 +1052,68 @@ const PortfolioEditView = ({
   );
 };
 
+const mockReviews = [
+  {
+    id: 'r1',
+    rating: 5,
+    comment: '정말 멋진 촬영이었습니다. 가이드라인에 맞게 준비를 철저히 해주셨고, 매너도 아주 좋으셨어요. 다음 번에도 또 함께 작업하고 싶습니다!',
+    authorname: '포토그래퍼 김민수',
+    date: '2026-03-28'
+  },
+  {
+    id: 'r2',
+    rating: 4,
+    comment: '시간 약속을 잘 지켜주시고 적극적으로 촬영에 임해주셨습니다.',
+    authorname: '임동혁',
+    date: '2026-03-15'
+  }
+];
+
+const ReviewListView = ({ onBack, reviews }: { onBack: () => void, reviews: any[] }) => (
+  <motion.div
+    initial={{ y: '100%' }}
+    animate={{ y: 0 }}
+    exit={{ y: '100%' }}
+    className="fixed inset-0 bg-white z-[80] p-6 overflow-y-auto md:max-w-2xl md:mx-auto md:shadow-2xl md:rounded-t-[3rem] md:top-10"
+  >
+    <header className="flex justify-between items-center mb-8 sticky top-0 bg-white z-10 pt-4 pb-2">
+      <button onClick={onBack}>
+        <ArrowLeft size={24} />
+      </button>
+      <h2 className="text-xl font-bold">받은 리뷰</h2>
+      <div className="w-6" />
+    </header>
+    <div className="space-y-4 pb-10">
+      {reviews.length === 0 ? (
+        <div className="text-center py-20 text-zinc-400">받은 리뷰가 없습니다.</div>
+      ) : (
+        reviews.map(r => (
+          <div key={r.id} className="p-5 bg-zinc-50 rounded-3xl border border-zinc-100">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="flex text-orange-400">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} size={16} className={i < r.rating ? 'fill-current' : 'text-zinc-200'} />
+                ))}
+              </div>
+              <span className="font-bold text-sm">{r.rating}.0</span>
+            </div>
+            <p className="text-sm text-zinc-600 mb-3 leading-relaxed">{r.comment}</p>
+            <div className="flex justify-between items-center text-xs text-zinc-400">
+              <span>{r.authorname}</span>
+              <span>{r.date}</span>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  </motion.div>
+);
+
 // --- Main App ---
 
 export default function AdMatchApp() {
+  const [hydrated, setHydrated] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('home');
   const [selectedModel, setSelectedModel] = useState<ModelProfile | null>(null);
@@ -865,57 +1124,365 @@ export default function AdMatchApp() {
   const [showPortfolioEdit, setShowPortfolioEdit] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showMyReviews, setShowMyReviews] = useState(false);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [notifItems, setNotifItems] = useState<ApiNotification[]>([]);
+  const [appNotifUnread, setAppNotifUnread] = useState(0);
+  const prevNotifUnread = useRef<number | null>(null);
 
   const [models, setModels] = useState<ModelProfile[]>(MOCK_MODELS);
-  const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
-  const [offers, setOffers] = useState<Offer[]>(MOCK_OFFERS);
-  const [chatRooms, setChatRooms] = useState<ChatRoom[]>(MOCK_CHATS);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [myReviews, setMyReviews] = useState<
+    { id: string; rating: number; comment: string; authorname: string; date: string }[]
+  >([]);
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const handleLogin = (type: UserType) => {
-    if (type === 'ADVERTISER') {
-      setCurrentUser(MOCK_USER_ADVERTISER);
-    } else {
-      setCurrentUser(MOCK_MODELS[0]);
-    }
-  };
-
-  const handleSendOffer = (modelId: string) => {
-    const newOffer: Offer = {
-      id: Date.now().toString(),
-      campaignId: campaigns[0].id,
-      advertiserId: currentUser?.id || '',
-      modelId,
-      price: '₩500,000',
-      status: 'PENDING',
-      createdAt: new Date().toISOString().split('T')[0],
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      const t =
+        typeof window !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+      if (!t) {
+        if (!cancel) setHydrated(true);
+        return;
+      }
+      try {
+        const u = await authMe(t);
+        if (!cancel) {
+          setToken(t);
+          const base = mapSessionUser(u);
+          setCurrentUser(base);
+          if (u.role === 'MODEL') {
+            try {
+              const p = await profileMe(t);
+              if (!cancel && p.type === 'MODEL') {
+                const profile: ModelProfile = {
+                  id: p.id,
+                  email: p.email,
+                  type: 'MODEL',
+                  name: p.name,
+                  age: p.age,
+                  height: p.height,
+                  category: p.category,
+                  region: p.region,
+                  price: p.price,
+                  rating: p.rating,
+                  reviewCount: p.reviewCount,
+                  avatar: p.avatar,
+                  images: p.images,
+                  description: p.description,
+                  style: p.style,
+                };
+                setCurrentUser(profile);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      } catch {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        if (!cancel) setToken(null);
+      } finally {
+        if (!cancel) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancel = true;
     };
-    setOffers([...offers, newOffer]);
-    setSelectedModel(null);
-    alert('제안이 성공적으로 전송되었습니다!');
+  }, []);
+
+  const refreshRooms = useCallback(async () => {
+    if (!token) return;
+    try {
+      const rooms = await chatsListRooms(token);
+      setChatRooms(
+        rooms.map((r) => ({
+          id: r.id,
+          participants: r.participants,
+          lastMessage: r.lastMessage,
+          timestamp: r.timestamp,
+          unreadCount: r.unreadCount,
+        })),
+      );
+    } catch {
+      /* 서버 미기동 등 */
+    }
+  }, [token]);
+
+  const loadAppData = useCallback(async () => {
+    if (!token || !currentUser) return;
+    try {
+      const modelRows = await modelsList();
+      setModels(
+        modelRows.map((m) => ({
+          id: m.id,
+          email: m.email,
+          type: 'MODEL',
+          name: m.name,
+          age: m.age,
+          height: m.height,
+          category: m.category,
+          region: m.region,
+          price: m.price,
+          rating: m.rating,
+          reviewCount: m.reviewCount,
+          avatar: m.avatar,
+          images: m.images,
+          description: m.description,
+          style: m.style,
+        })),
+      );
+    } catch {
+      /* API 미연결 시 목 데이터 유지 */
+    }
+
+    try {
+      const camps =
+        currentUser.type === 'ADVERTISER'
+          ? await campaignsMine(token)
+          : await campaignsList('OPEN');
+      setCampaigns(camps);
+    } catch {
+      setCampaigns([]);
+    }
+
+    try {
+      const mine = await offersMine(token);
+      setOffers(mine);
+    } catch {
+      setOffers([]);
+    }
+
+    if (currentUser.type === 'MODEL') {
+      try {
+        const rev = await reviewsMine(token);
+        setMyReviews(rev);
+      } catch {
+        setMyReviews([]);
+      }
+    }
+  }, [token, currentUser]);
+
+  useEffect(() => {
+    void loadAppData();
+  }, [loadAppData]);
+
+  useEffect(() => {
+    if (!token) {
+      setChatRooms([]);
+      return;
+    }
+    void refreshRooms();
+    const id = setInterval(() => void refreshRooms(), 5000);
+    return () => clearInterval(id);
+  }, [token, refreshRooms]);
+
+  const refreshNotifCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const { count } = await notificationsUnreadCount(token);
+      setAppNotifUnread(count);
+    } catch {
+      /* ignore */
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      setAppNotifUnread(0);
+      return;
+    }
+    void refreshNotifCount();
+    const id = setInterval(() => void refreshNotifCount(), 8000);
+    return () => clearInterval(id);
+  }, [token, refreshNotifCount]);
+
+  useEffect(() => {
+    if (
+      prevNotifUnread.current !== null &&
+      appNotifUnread > prevNotifUnread.current &&
+      typeof document !== 'undefined' &&
+      document.hidden &&
+      typeof Notification !== 'undefined' &&
+      Notification.permission === 'granted'
+    ) {
+      new Notification('AdMatch', { body: '새 알림이 있습니다.' });
+    }
+    prevNotifUnread.current = appNotifUnread;
+  }, [appNotifUnread]);
+
+  const openNotifPanel = async () => {
+    if (!token) return;
+    setShowNotifPanel(true);
+    try {
+      const list = await notificationsList(token);
+      setNotifItems(list);
+    } catch {
+      setNotifItems([]);
+    }
+    void refreshNotifCount();
   };
 
-  const handleAcceptOffer = (offerId: string) => {
-    setOffers(offers.map((o) => (o.id === offerId ? { ...o, status: 'ACCEPTED' as const } : o)));
-    const offer = offers.find((o) => o.id === offerId);
-    if (offer) {
-      const newRoom: ChatRoom = {
-        id: `room-${Date.now()}`,
-        matchId: offer.id,
-        participants: [offer.advertiserId, offer.modelId],
-        lastMessage: '제안이 수락되었습니다! 상세 내용을 논의해보세요.',
-        timestamp: '방금 전',
-        unreadCount: 0,
-      };
-      setChatRooms([newRoom, ...chatRooms]);
+  const handleAuthSuccess = async (accessToken: string, user: SessionUser) => {
+    localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
+    setToken(accessToken);
+    setCurrentUser(mapSessionUser(user));
+    if (user.role === 'MODEL') {
+      try {
+        const p = await profileMe(accessToken);
+        if (p.type === 'MODEL') {
+          const profile: ModelProfile = {
+            id: p.id,
+            email: p.email,
+            type: 'MODEL',
+            name: p.name,
+            age: p.age,
+            height: p.height,
+            category: p.category,
+            region: p.region,
+            price: p.price,
+            rating: p.rating,
+            reviewCount: p.reviewCount,
+            avatar: p.avatar,
+            images: p.images,
+            description: p.description,
+            style: p.style,
+          };
+          setCurrentUser(profile);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      void Notification.requestPermission();
     }
   };
 
-  if (!currentUser) return <LoginView onLogin={handleLogin} />;
+  const chatUnreadTotal = useMemo(
+    () => chatRooms.reduce((s, r) => s + (r.unreadCount || 0), 0),
+    [chatRooms],
+  );
+
+  const mergeServerRoom = (apiRoom: {
+    id: string;
+    participants: string[];
+    lastMessage: string;
+    timestamp: string;
+    unreadCount: number;
+  }, matchId?: string) => {
+    const row: ChatRoom = {
+      id: apiRoom.id,
+      participants: apiRoom.participants,
+      lastMessage: apiRoom.lastMessage || '대화를 시작해 보세요.',
+      timestamp: apiRoom.timestamp || '방금',
+      unreadCount: apiRoom.unreadCount,
+      matchId,
+    };
+    setChatRooms((prev) => {
+      const rest = prev.filter((r) => r.id !== row.id);
+      return [row, ...rest];
+    });
+  };
+
+  const handleSendOffer = async (modelId: string) => {
+    if (!currentUser || !token) return;
+    const camp =
+      campaigns.find((c) => c.advertiserId === currentUser.id) ?? campaigns[0];
+    if (!camp) {
+      alert('먼저 캠페인을 등록해 주세요.');
+      return;
+    }
+
+    try {
+      const offer = await offersCreate(token, {
+        campaignId: camp.id,
+        modelId,
+        price: '₩500,000',
+      });
+      setOffers((prev) => [...prev, offer]);
+      const apiRoom = await chatsCreateOrGetRoom(token, modelId);
+      mergeServerRoom(apiRoom, offer.id);
+      setSelectedModel(null);
+      alert('제안이 전송되었습니다. 채팅에서 이어가실 수 있습니다.');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '제안 전송에 실패했습니다.');
+    }
+  };
+
+  const handleApplyCampaign = async (campaignId: string) => {
+    const campaign = campaigns.find((c) => c.id === campaignId);
+    if (!campaign || !currentUser || !token) return;
+
+    try {
+      const offer = await offersCreate(token, {
+        campaignId,
+        price: '협의',
+      });
+      setOffers((prev) => [...prev, offer]);
+      const apiRoom = await chatsCreateOrGetRoom(token, campaign.advertiserId);
+      mergeServerRoom(apiRoom, offer.id);
+      setSelectedCampaign(null);
+      alert('지원이 완료되었습니다. 채팅에서 확인해 주세요.');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '지원에 실패했습니다.');
+    }
+  };
+
+  const handleAcceptOffer = async (offerId: string) => {
+    if (!token) return;
+    const offer = offers.find((o) => o.id === offerId);
+    try {
+      const updated = await offersUpdateStatus(token, offerId, 'ACCEPTED');
+      setOffers((prev) =>
+        prev.map((o) => (o.id === offerId ? { ...o, status: updated.status } : o)),
+      );
+      if (offer) {
+        const apiRoom = await chatsCreateOrGetRoom(token, offer.advertiserId);
+        mergeServerRoom(apiRoom, offer.id);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '수락 처리에 실패했습니다.');
+    }
+  };
+
+  const resolveParticipant = (participantId: string | undefined): User | ModelProfile | undefined => {
+    if (!participantId) return undefined;
+    if (participantId === currentUser?.id) return currentUser;
+    const model = models.find((m) => m.id === participantId);
+    if (model) return model;
+    return {
+      id: participantId,
+      email: `${participantId}@local`,
+      type: 'ADVERTISER',
+      name: `사용자 ${participantId}`,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${participantId}`,
+    };
+  };
+
+  if (!hydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white text-zinc-400 text-sm">
+        불러오는 중…
+      </div>
+    );
+  }
+
+  if (!currentUser || !token) {
+    return <LoginView onAuthed={handleAuthSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans text-black md:pl-20">
       <>
-        <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          chatUnreadTotal={chatUnreadTotal}
+        />
 
         <main className="flex-1 pb-24 overflow-y-auto md:max-w-5xl md:mx-auto md:w-full md:pb-12">
           {activeTab === 'home' && (
@@ -1054,55 +1621,68 @@ export default function AdMatchApp() {
 
                   {offers.filter((o) => o.modelId === currentUser.id && o.status === 'PENDING').length >
                     0 && (
-                    <section>
-                      <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-bold">새로운 제안</h2>
-                        <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-full">
-                          {
-                            offers.filter((o) => o.modelId === currentUser.id && o.status === 'PENDING')
-                              .length
-                          }{' '}
-                          NEW
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {offers
-                          .filter((o) => o.modelId === currentUser.id && o.status === 'PENDING')
-                          .map((offer) => {
-                            const campaign = campaigns.find((c) => c.id === offer.campaignId);
-                            return (
-                              <div
-                                key={offer.id}
-                                className="p-5 bg-orange-50/50 rounded-3xl border border-orange-100"
-                              >
-                                <div className="flex justify-between items-start">
-                                  <div>
-                                    <h3 className="font-bold text-sm">{campaign?.title}</h3>
-                                    <p className="text-xs text-zinc-500">{campaign?.brand}</p>
+                      <section>
+                        <div className="flex justify-between items-center mb-4">
+                          <h2 className="text-xl font-bold">새로운 제안</h2>
+                          <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                            {
+                              offers.filter((o) => o.modelId === currentUser.id && o.status === 'PENDING')
+                                .length
+                            }{' '}
+                            NEW
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {offers
+                            .filter((o) => o.modelId === currentUser.id && o.status === 'PENDING')
+                            .map((offer) => {
+                              const campaign = campaigns.find((c) => c.id === offer.campaignId);
+                              return (
+                                <div
+                                  key={offer.id}
+                                  className="p-5 bg-orange-50/50 rounded-3xl border border-orange-100"
+                                >
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <h3 className="font-bold text-sm">{campaign?.title}</h3>
+                                      <p className="text-xs text-zinc-500">{campaign?.brand}</p>
+                                    </div>
+                                    <p className="text-sm font-bold text-orange-600">{offer.price}</p>
                                   </div>
-                                  <p className="text-sm font-bold text-orange-600">{offer.price}</p>
+                                  <div className="mt-4 flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleAcceptOffer(offer.id)}
+                                      className="flex-1 bg-black text-white text-xs font-bold py-2.5 rounded-xl"
+                                    >
+                                      수락
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void offersUpdateStatus(token!, offer.id, 'REJECTED').then(
+                                          (updated) => {
+                                            setOffers((prev) =>
+                                              prev.map((o) =>
+                                                o.id === offer.id ? { ...o, status: updated.status } : o,
+                                              ),
+                                            );
+                                          },
+                                        ).catch((e) =>
+                                          alert(e instanceof Error ? e.message : '거절 처리에 실패했습니다.'),
+                                        )
+                                      }
+                                      className="flex-1 bg-white border border-zinc-200 text-zinc-400 text-xs font-bold py-2.5 rounded-xl"
+                                    >
+                                      거절
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="mt-4 flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAcceptOffer(offer.id)}
-                                    className="flex-1 bg-black text-white text-xs font-bold py-2.5 rounded-xl"
-                                  >
-                                    수락
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="flex-1 bg-white border border-zinc-200 text-zinc-400 text-xs font-bold py-2.5 rounded-xl"
-                                  >
-                                    거절
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </section>
-                  )}
+                              );
+                            })}
+                        </div>
+                      </section>
+                    )}
 
                   <section>
                     <h2 className="text-xl font-bold mb-4">진행 중인 프로젝트</h2>
@@ -1129,10 +1709,10 @@ export default function AdMatchApp() {
                         })}
                       {offers.filter((o) => o.modelId === currentUser.id && o.status === 'ACCEPTED')
                         .length === 0 && (
-                        <div className="py-8 text-center bg-zinc-50 rounded-3xl border border-dashed border-zinc-200 text-zinc-400 text-sm">
-                          현재 진행 중인 프로젝트가 없습니다.
-                        </div>
-                      )}
+                          <div className="py-8 text-center bg-zinc-50 rounded-3xl border border-dashed border-zinc-200 text-zinc-400 text-sm">
+                            현재 진행 중인 프로젝트가 없습니다.
+                          </div>
+                        )}
                     </div>
                   </section>
 
@@ -1166,6 +1746,7 @@ export default function AdMatchApp() {
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => void handleApplyCampaign(camp.id)}
                                   className="px-4 py-2 bg-black text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
                                 >
                                   지원하기
@@ -1190,6 +1771,8 @@ export default function AdMatchApp() {
                     type="text"
                     placeholder="검색어를 입력하세요..."
                     className="w-full bg-zinc-100 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-black"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
                 <button
@@ -1219,33 +1802,40 @@ export default function AdMatchApp() {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {models.map((model) => (
-                    <div
-                      key={model.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedModel(model)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') setSelectedModel(model);
-                      }}
-                      className="relative aspect-[3/4] rounded-2xl overflow-hidden cursor-pointer group shadow-sm"
-                    >
-                      <img
-                        src={model.images[0]}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                      <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-                        <h3 className="font-bold">{model.name}</h3>
-                        <div className="flex items-center gap-1 mt-1 opacity-80 text-[10px]">
-                          <MapPin size={10} />
-                          <span>{model.region}</span>
+                  {models
+                    .filter(
+                      (m) =>
+                        !searchQuery ||
+                        m.name.includes(searchQuery) ||
+                        (m.category || []).some((c) => c.includes(searchQuery))
+                    )
+                    .map((model) => (
+                      <div
+                        key={model.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedModel(model)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') setSelectedModel(model);
+                        }}
+                        className="relative aspect-[3/4] rounded-2xl overflow-hidden cursor-pointer group shadow-sm"
+                      >
+                        <img
+                          src={model.images[0]}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                        <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
+                          <h3 className="font-bold">{model.name}</h3>
+                          <div className="flex items-center gap-1 mt-1 opacity-80 text-[10px]">
+                            <MapPin size={10} />
+                            <span>{model.region}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             </div>
@@ -1257,10 +1847,7 @@ export default function AdMatchApp() {
               <div className="space-y-2 md:max-w-2xl md:mx-auto">
                 {chatRooms.map((room) => {
                   const otherParticipant = room.participants.find((p) => p !== currentUser.id);
-                  const otherUser =
-                    otherParticipant === 'adv1'
-                      ? MOCK_USER_ADVERTISER
-                      : MOCK_MODELS.find((m) => m.id === otherParticipant);
+                  const otherUser = resolveParticipant(otherParticipant);
 
                   return (
                     <button
@@ -1325,7 +1912,7 @@ export default function AdMatchApp() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowReviewForm(true)}
+                  onClick={() => setShowMyReviews(true)}
                   className="p-6 bg-zinc-50 rounded-3xl text-left hover:bg-zinc-100 transition-colors"
                 >
                   <Star className="text-zinc-400 mb-3" size={24} />
@@ -1362,8 +1949,32 @@ export default function AdMatchApp() {
 
               <button
                 type="button"
-                onClick={() => setCurrentUser(null)}
-                className="w-full mt-12 py-4 text-red-500 font-bold flex items-center justify-center gap-2"
+                onClick={() => void openNotifPanel()}
+                className="w-full flex justify-between items-center p-4 bg-zinc-50 rounded-2xl hover:bg-zinc-100 transition-colors mb-2"
+              >
+                <span className="font-medium flex items-center gap-2">
+                  <Bell size={18} className="text-zinc-500" />
+                  알림
+                </span>
+                <span className="flex items-center gap-2">
+                  {appNotifUnread > 0 && (
+                    <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {appNotifUnread > 99 ? '99+' : appNotifUnread}
+                    </span>
+                  )}
+                  <ChevronRight size={18} className="text-zinc-400" />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem(AUTH_TOKEN_KEY);
+                  setToken(null);
+                  setCurrentUser(null);
+                  setChatRooms([]);
+                }}
+                className="w-full mt-8 py-4 text-red-500 font-bold flex items-center justify-center gap-2"
               >
                 <LogOut size={18} />
                 로그아웃
@@ -1468,6 +2079,7 @@ export default function AdMatchApp() {
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-xl border-t border-zinc-100 md:max-w-2xl md:mx-auto md:w-full md:rounded-b-[3rem] md:bottom-10">
               <button
                 type="button"
+                onClick={() => void handleApplyCampaign(selectedCampaign.id)}
                 className="w-full bg-black text-white font-bold py-4 rounded-2xl shadow-lg shadow-black/10 active:scale-95 transition-transform"
               >
                 이 캠페인에 지원하기
@@ -1523,7 +2135,7 @@ export default function AdMatchApp() {
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-xl border-t border-zinc-100 flex gap-3 md:max-w-2xl md:mx-auto md:w-full md:rounded-b-[3rem] md:bottom-10">
               <button
                 type="button"
-                onClick={() => handleSendOffer(selectedModel.id)}
+                onClick={() => void handleSendOffer(selectedModel.id)}
                 className="flex-1 bg-black text-white font-bold py-4 rounded-2xl shadow-lg shadow-black/10"
               >
                 제안 보내기
@@ -1539,16 +2151,86 @@ export default function AdMatchApp() {
         )}
 
         {selectedRoom && (
-          <ChatRoomView room={selectedRoom} currentUser={currentUser} onBack={() => setSelectedRoom(null)} />
+          <ChatRoomView
+            room={selectedRoom}
+            currentUser={currentUser}
+            token={token}
+            models={models}
+            onBack={() => setSelectedRoom(null)}
+            onRoomsRefresh={() => void refreshRooms()}
+          />
         )}
 
-        {showCampaignForm && (
+        {showNotifPanel && token && (
+          <motion.div
+            key="notif-panel"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            className="fixed inset-0 bg-white z-[85] overflow-y-auto"
+          >
+            <header className="px-6 py-6 border-b border-zinc-100 flex items-center gap-4 sticky top-0 bg-white z-10">
+              <button type="button" onClick={() => setShowNotifPanel(false)}>
+                <ArrowLeft size={24} />
+              </button>
+              <h2 className="text-xl font-bold">알림</h2>
+            </header>
+            <div className="p-6 space-y-3 md:max-w-2xl md:mx-auto">
+              {notifItems.length === 0 ? (
+                <p className="text-center text-zinc-400 py-16 text-sm">알림이 없습니다.</p>
+              ) : (
+                notifItems.map((n) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => {
+                      void notificationMarkRead(token, n.id).then(() => {
+                        setNotifItems((prev) =>
+                          prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)),
+                        );
+                        void refreshNotifCount();
+                      });
+                    }}
+                    className={cn(
+                      'w-full text-left p-4 rounded-2xl border transition-colors',
+                      n.isRead ? 'bg-zinc-50 border-zinc-100' : 'bg-orange-50/40 border-orange-100',
+                    )}
+                  >
+                    <p className="font-bold text-sm">{n.title}</p>
+                    <p className="text-sm text-zinc-600 mt-1 line-clamp-3">{n.body}</p>
+                    <p className="text-[10px] text-zinc-400 mt-2">
+                      {new Date(n.createdAt).toLocaleString('ko-KR')}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {showCampaignForm && token && (
           <CampaignForm
             onBack={() => setShowCampaignForm(false)}
-            onSave={(camp) => {
-              setCampaigns([camp, ...campaigns]);
-              setShowCampaignForm(false);
-              alert('캠페인이 생성되었습니다!');
+            onSave={async (camp) => {
+              try {
+                const created = await campaignsCreate(token, {
+                  title: camp.title,
+                  brand: camp.brand,
+                  budget: camp.budget,
+                  requirements: camp.requirements,
+                  goals: camp.goals,
+                  contentStyle: camp.contentStyle,
+                  brandGuidelines: camp.brandGuidelines,
+                  productDetails: camp.productDetails,
+                  benefits: camp.benefits,
+                  type: camp.type,
+                });
+                setCampaigns([created, ...campaigns]);
+                setShowCampaignForm(false);
+                alert('캠페인이 생성되었습니다!');
+              } catch (e) {
+                alert(e instanceof Error ? e.message : '캠페인 생성에 실패했습니다.');
+              }
             }}
           />
         )}
@@ -1564,15 +2246,35 @@ export default function AdMatchApp() {
           />
         )}
 
-        {showPortfolioEdit && currentUser.type === 'MODEL' && (
+        {showPortfolioEdit && currentUser.type === 'MODEL' && token && (
           <PortfolioEditView
             profile={currentUser as ModelProfile}
             onBack={() => setShowPortfolioEdit(false)}
-            onSave={(p) => {
-              setModels(models.map((m) => (m.id === p.id ? p : m)));
-              setCurrentUser(p);
-              setShowPortfolioEdit(false);
-              alert('포트폴리오가 업데이트되었습니다!');
+            onSave={async (p) => {
+              try {
+                const updated = await profileUpdate(token, {
+                  name: p.name,
+                  age: p.age,
+                  height: p.height,
+                  description: p.description,
+                  images: p.images,
+                });
+                const mapped: ModelProfile = {
+                  ...p,
+                  name: updated.name,
+                  age: updated.age,
+                  height: updated.height,
+                  description: updated.description,
+                  images: updated.images,
+                  avatar: updated.avatar,
+                };
+                setModels(models.map((m) => (m.id === mapped.id ? mapped : m)));
+                setCurrentUser(mapped);
+                setShowPortfolioEdit(false);
+                alert('포트폴리오가 업데이트되었습니다!');
+              } catch (e) {
+                alert(e instanceof Error ? e.message : '저장에 실패했습니다.');
+              }
             }}
           />
         )}
@@ -1581,13 +2283,37 @@ export default function AdMatchApp() {
           <FilterOverlay onBack={() => setShowFilters(false)} onApply={() => setShowFilters(false)} />
         )}
 
-        {showReviewForm && (
+        {showReviewForm && token && (
           <ReviewForm
             onBack={() => setShowReviewForm(false)}
-            onSave={() => {
-              setShowReviewForm(false);
-              alert('리뷰가 제출되었습니다!');
+            onSave={async ({ rating, comment }) => {
+              const accepted = offers.find(
+                (o) =>
+                  o.advertiserId === currentUser.id && o.status === 'ACCEPTED',
+              );
+              if (!accepted) {
+                alert('리뷰를 작성할 매칭이 없습니다.');
+                return;
+              }
+              try {
+                await reviewsCreate(token, {
+                  modelId: accepted.modelId,
+                  rating,
+                  comment,
+                });
+                setShowReviewForm(false);
+                alert('리뷰가 제출되었습니다!');
+              } catch (e) {
+                alert(e instanceof Error ? e.message : '리뷰 제출에 실패했습니다.');
+              }
             }}
+          />
+        )}
+
+        {showMyReviews && (
+          <ReviewListView
+            onBack={() => setShowMyReviews(false)}
+            reviews={myReviews.length > 0 ? myReviews : mockReviews}
           />
         )}
       </AnimatePresence>
